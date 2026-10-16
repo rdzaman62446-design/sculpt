@@ -109,6 +109,10 @@ input[type=range]:disabled { opacity: .4; }
 .placard .t { font-family: var(--display); font-size: 19px; font-style: italic; }
 .placard .m { font-size: 13px; color: var(--muted); }
 .placard .d { font-family: var(--mono); font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.height-row { align-items: center; }
+#bodyHeight { width: 5.5em; font: 500 14px var(--mono); padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--ink); text-align: right; }
+.stage.body .cam { width: min(52%, 460px); }
+.stage.body .guide .g1 { font-size: 18px; }
 .vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
 @media (max-width: 760px) {
@@ -116,6 +120,7 @@ input[type=range]:disabled { opacity: .4; }
   .app { grid-template-columns: 1fr; height: auto; }
   .stage { height: 70vh; min-height: 420px; }
   .stage.scanning .cam { width: 64%; left: 12px; right: auto; }
+  .stage.scanning.body .cam { width: 58%; }
   .guide .g1 { font-size: 13px; }
   .side { overflow: visible; }
   h1 { font-size: 28px; }
@@ -143,18 +148,22 @@ input[type=range]:disabled { opacity: .4; }
   <aside class="side">
     <div class="intro">
       <h1>Selfie <em>Sculptor</em></h1>
-      <p class="lede">Scan your whole head with the front camera and watch it turn into a sculpture as you move.</p>
+      <p class="lede">Scan your head or your whole body with the front camera and watch it turn into a sculpture as you move.</p>
     </div>
 
     <div class="capture" id="startControls">
-      <button type="button" class="btn primary" id="scanBtn">Scan my head (live)</button>
+      <div class="pair">
+        <button type="button" class="btn primary" id="scanBtn">Scan my head</button>
+        <button type="button" class="btn primary" id="bodyBtn">Scan my body</button>
+      </div>
+      <div class="row height-row"><label class="label" for="bodyHeight">Your height (body scan)</label><span><input id="bodyHeight" type="number" min="100" max="230" step="1" value="170" inputmode="numeric"> <span class="val">cm</span></span></div>
       <div class="pair">
         <label class="btn" for="camInput">Selfie relief</label>
         <label class="btn" for="fileInput">From a photo</label>
       </div>
       <input id="camInput" class="vh" type="file" accept="image/*" capture="user">
       <input id="fileInput" class="vh" type="file" accept="image/*">
-      <p class="hint">Live scan: hold the phone at arm's length in even light, then follow the ring. Everything runs on your device; no video is uploaded.</p>
+      <p class="hint">Head: hold the phone at arm's length and follow the ring. Body: prop the phone up, step back and turn a slow full circle while it talks you through it. Everything runs on your device; no video is uploaded.</p>
     </div>
 
     <div class="capture" id="scanControls" hidden>
@@ -218,7 +227,7 @@ const CANON = new Float32Array(window.CANON_V);
 const TRIS = window.CANON_F;
 let source = { pts: CANON, uv: null, photo: null };
 let mode = "relief"; // "relief" | "head"
-let scan = null, headRaw = null;
+let scan = null, scanRaw = null;
 
 /* ---------- mesh helpers ---------- */
 // Face surface with eyes and mouth closed by fans; also returns the outer rim.
@@ -404,7 +413,7 @@ const finishes = {
   clay:   () => new THREE.MeshStandardMaterial({ color: 0x8a4630, roughness: 0.9, metalness: 0, envMapIntensity: 0.4 }),
   marble: () => new THREE.MeshPhysicalMaterial({ color: 0xece8e1, roughness: 0.38, metalness: 0, clearcoat: 0.25, clearcoatRoughness: 0.5, envMapIntensity: 0.8 }),
   bronze: () => new THREE.MeshStandardMaterial({ color: 0x8a5d2c, roughness: 0.34, metalness: 1, envMapIntensity: 1.3 }),
-  paint:  () => mode === "head"
+  paint:  () => mode !== "relief"
     ? new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.75, metalness: 0, envMapIntensity: 0.4 })
     : new THREE.MeshStandardMaterial({ map: photoTex, roughness: 0.75, metalness: 0, envMapIntensity: 0.4 }),
 };
@@ -421,20 +430,26 @@ function showMesh(m, colors) {
   if (sculpt) { sculpt.geometry.dispose(); sculpt.geometry = g; }
   else { sculpt = new THREE.Mesh(g, finishes[finish]()); sculpt.castShadow = true; sculpt.receiveShadow = true; scene.add(sculpt); }
   const bb = g.boundingBox, size = new THREE.Vector3(); bb.getSize(size);
-  if (mode === "head") {
+  sculpt.scale.setScalar(1);
+  if (mode === "body") {
+    // shown as a 30 cm figurine on the plinth
+    const k = 30 / size.y;
+    sculpt.scale.setScalar(k);
+    sculpt.position.set(-(bb.max.x + bb.min.x) / 2 * k, -15 - bb.min.y * k, -3 - (bb.max.z + bb.min.z) / 2 * k);
+  } else if (mode === "head") {
     // the bust stands straight on the plinth
     sculpt.position.set(-(bb.max.x + bb.min.x) / 2, -15 - bb.min.y, -3 - (bb.max.z + bb.min.z) / 2);
   } else {
     sculpt.position.set(0, -2 - (bb.max.y + bb.min.y) / 2, -bb.min.z - 4.4);
   }
-  rod.visible = mode !== "head";
-  $("pDims").textContent = `${size.y.toFixed(1)} × ${size.x.toFixed(1)} × ${size.z.toFixed(1)} cm (approx. life size)`;
+  rod.visible = mode === "relief";
+  $("pDims").textContent = `${size.y.toFixed(1)} × ${size.x.toFixed(1)} × ${size.z.toFixed(1)} cm ` + (mode === "body" ? "(STL at 1:10 scale)" : "(approx. life size)");
   return g;
 }
 function frameView() {
   // tall phone screens need the camera further back to fit the whole bust
   const far = camera.aspect < 0.9 ? 1.45 : 1;
-  if (mode === "head") { controls.target.set(0, -3, -3); camera.position.set(22 * far, 6, 62 * far - 3 * (far - 1)); }
+  if (mode !== "relief") { controls.target.set(0, -3, -3); camera.position.set(22 * far, 6, 62 * far - 3 * (far - 1)); }
   else { controls.target.set(0, -2, 0); camera.position.set(14 * far, 4, 48 * far); }
 }
 
@@ -446,13 +461,13 @@ function rebuildRelief() {
   showMesh(m);
   $("pMesh").textContent = `${N} landmarks · ${m.tris.length.toLocaleString()} faces`;
 }
-function rebuild() { if (mode === "head") rebuildHead(true); else rebuildRelief(); }
+function rebuild() { if (mode === "relief") rebuildRelief(); else rebuildScan(true); }
 
 function setFinish(name) {
   finish = name;
   for (const b of $("finish").querySelectorAll("button")) b.setAttribute("aria-pressed", String(b.dataset.m === name));
   const old = sculpt.material; sculpt.material = finishes[name](); old.dispose();
-  const from = mode === "head" ? "from a live scan" : source.photo ? "from a selfie" : null;
+  const from = mode === "head" ? "from a live head scan" : mode === "body" ? "from a live body scan" : source.photo ? "from a selfie" : null;
   $("pMed").textContent = from
     ? { clay: "Terracotta, ", marble: "Carrara marble, ", bronze: "Cast bronze, ", paint: "Painted plaster, " }[name] + from
     : "Sample, from the reference face mesh";
@@ -570,6 +585,7 @@ for (const id of ["camInput", "fileInput"]) $(id).addEventListener("change", (e)
 // Voxel grid in head space (cm). Each captured view carves away what lies outside your outline.
 const VH = 0.4, GX0 = -12, GY0 = -18, GZ0 = -18, NX = 60, NY = 85, NZ = 70, NV = NX * NY * NZ;
 const SEGS = 16;
+const HEAD_GRID = { nx: NX, ny: NY, nz: NZ, h: VH, x0: GX0, y0: GY0, z0: GZ0 };
 
 function initGrid(R) {
   const prior = new Uint8Array(NV), outs = new Uint8Array(NV), depth = new Float32Array(NX * NY).fill(NaN);
@@ -611,11 +627,12 @@ function initGrid(R) {
     const face = fd > 0 && z > -7;
     if (head || neck || face) prior[(k * NY + j) * NX + i] = 1;
   }
-  return { prior, outs, depth };
+  return { G: HEAD_GRID, prior, outs, depth };
 }
 
 function carve(grid, mask, mw, mh, P) {
-  const { prior, outs } = grid;
+  const { prior, outs, G } = grid;
+  const { nx: NX, ny: NY, nz: NZ, h: VH, x0: GX0, y0: GY0, z0: GZ0 } = G, NV = NX * NY * NZ;
   for (let k = 0; k < NZ; k++) {
     const z = GZ0 + k * VH;
     for (let j = 0; j < NY; j++) {
@@ -632,7 +649,8 @@ function carve(grid, mask, mw, mh, P) {
   }
 }
 
-function blur3(f) {
+function blur3(f, G) {
+  const { nx: NX, ny: NY, nz: NZ, h: VH, x0: GX0, y0: GY0, z0: GZ0 } = G, NV = NX * NY * NZ;
   const t = new Float32Array(NV);
   const pass = (src, dst, stride, n, coord) => {
     for (let idx = 0; idx < NV; idx++) {
@@ -648,7 +666,8 @@ function blur3(f) {
 }
 
 // Naive surface nets: one vertex per surface cell, one quad per crossing edge.
-function surfaceNets(f, iso) {
+function surfaceNets(f, G, iso) {
+  const { nx: NX, ny: NY, nz: NZ, h: VH, x0: GX0, y0: GY0, z0: GZ0 } = G, NV = NX * NY * NZ;
   const cell = new Int32Array(NV).fill(-1), pos = [];
   const corner = new Float32Array(8);
   for (let k = 0; k < NZ - 1; k++) for (let j = 0; j < NY - 1; j++) for (let i = 0; i < NX - 1; i++) {
@@ -692,16 +711,18 @@ function surfaceNets(f, iso) {
   return { pos, tris };
 }
 
-function headField(grid, nFrames) {
-  const thr = Math.max(2, Math.round(nFrames * 0.12));
+// A voxel survives unless enough views saw background there (a few bad frames can't punch holes).
+function scanField(grid, nFrames, frac = 0.12) {
+  const G = grid.G, NV = G.nx * G.ny * G.nz;
+  const thr = Math.max(2, Math.round(nFrames * frac));
   const f = new Float32Array(NV);
   for (let i = 0; i < NV; i++) f[i] = grid.prior[i] && grid.outs[i] < thr ? 1 : 0;
-  blur3(f); blur3(f);
+  blur3(f, G); blur3(f, G);
   return f;
 }
 
 // Colour each vertex from the captured view that saw it most directly.
-function headColors(frames) {
+function headColors(frames, crownY) {
   return (g) => {
     const p = g.attributes.position.array, n = g.attributes.normal.array, out = new Float32Array(p.length);
     const missing = [];
@@ -714,54 +735,77 @@ function headColors(frames) {
       const x = Math.min(best.w - 1, Math.max(0, u | 0)), y = Math.min(best.h - 1, Math.max(0, w | 0)), o = (y * best.w + x) * 4;
       const r = (best.rgba[o] / 255) ** 2.2, gg = (best.rgba[o+1] / 255) ** 2.2, b = (best.rgba[o+2] / 255) ** 2.2;
       out[v] = r; out[v+1] = gg; out[v+2] = b;
-      if (p[v+1] > 9) { hr += r; hg += gg; hb += b; hn++; }
+      if (p[v+1] > crownY) { hr += r; hg += gg; hb += b; hn++; }
     }
-    // never-seen areas (the back of the head) take the colour of the crown
+    // never-seen areas (the back of the head, the top) take the colour of the crown
     const fill = hn ? [hr / hn, hg / hn, hb / hn] : [0.05, 0.04, 0.035];
     for (const v of missing) { out[v] = fill[0]; out[v+1] = fill[1]; out[v+2] = fill[2]; }
     return out;
   };
 }
 
-function rebuildHead(final) {
-  if (!headRaw) return;
+function rebuildScan(final) {
+  if (!scanRaw) return;
   const smooth = +$("smooth").value;
   $("smoothVal").textContent = smooth;
-  const m = { pos: headRaw.pos.map((v) => v.slice()), tris: headRaw.tris };
-  const frames = scan?.frames.length ? scan.frames : headRaw.frames || [];
+  const m = { pos: scanRaw.pos.map((v) => v.slice()), tris: scanRaw.tris };
+  const frames = scanRaw.frames || [];
   taubin(m, final ? smooth : 2);
-  showMesh(m, final && frames.length ? headColors(frames) : null);
-  $("pMesh").textContent = `${frames.length} views · ${m.tris.length.toLocaleString()} faces`;
+  showMesh(m, final && frames.length ? headColors(frames, scanRaw.crownY) : null);
+  $("pMesh").textContent = `${scanRaw.views} views · ${m.tris.length.toLocaleString()} faces`;
 }
-function extractHead() {
-  const f = headField(scan.grid, scan.frames.length);
-  const m = surfaceNets(f, 0.5);
+function extractScan(grid, nFrames, frac, crownY) {
+  const m = surfaceNets(scanField(grid, nFrames, frac), grid.G, 0.5);
   if (m.tris.length < 200) return false;
-  headRaw = { pos: m.pos, tris: m.tris, frames: null };
+  scanRaw = { pos: m.pos, tris: m.tris, frames: null, crownY, views: nFrames };
   return true;
 }
 
 const g1 = $("g1"), g2 = $("g2"), video = $("video"), overlay = $("overlay"), octx = overlay.getContext("2d");
 const colorCanvas = document.createElement("canvas"), cctx = colorCanvas.getContext("2d", { willReadFrequently: true });
+function grabColor(W, H) {
+  const cw = 320, ch = Math.round(H * cw / W);
+  colorCanvas.width = cw; colorCanvas.height = ch;
+  cctx.drawImage(video, 0, 0, cw, ch);
+  return { rgba: cctx.getImageData(0, 0, cw, ch).data, w: cw, h: ch, k: cw / W };
+}
 
-async function startScan() {
+async function startScan(kind) {
   if (!navigator.mediaDevices?.getUserMedia) { say("This browser can't open the camera here. Open the page over HTTPS in Safari or Chrome.", true); return; }
-  scan = { phase: "loading", frames: [], segs: new Array(SEGS).fill(false), left: false, right: false, stable: 0, grid: null, R: null, lastBuild: 0, dirty: false, live: 0 };
-  $("stage").classList.add("scanning"); $("cam").hidden = false; resize();
+  if (scan) stopScan();
+  say("");
+  scan = { kind, phase: "loading", frames: [], segs: new Array(SEGS).fill(false), left: false, right: false, stable: 0, grid: null, R: null, lastBuild: 0, dirty: false, live: 0 };
+  $("stage").classList.add("scanning"); $("stage").classList.toggle("body", kind === "body");
+  $("cam").hidden = false; resize();
   $("startControls").hidden = true; $("scanControls").hidden = false; $("finishBtn").disabled = true;
+  $("scanHint").textContent = kind === "body"
+    ? "Prop the phone up at waist height, step back until you fit, and listen for the spoken steps."
+    : "Turning your head works best. You can also move the phone around your head.";
   controls.autoRotate = false;
   g1.textContent = "Starting camera…"; g2.textContent = "";
+  if (kind === "body") { scan.voice = true; speak("Starting body scan", true); }
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } }, audio: false });
+    const want = kind === "body" ? { width: { ideal: 1280 }, height: { ideal: 720 } } : { width: { ideal: 640 }, height: { ideal: 480 } };
+    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user", ...want }, audio: false });
     if (!scan) { stream.getTracks().forEach((t) => t.stop()); return; }
     scan.stream = stream; video.srcObject = stream; await video.play();
-    g1.textContent = "Loading face tracking…"; g2.textContent = "First time only, about 13 MB";
-    const [face, seg] = await Promise.all([videoFace(), segmenter()]);
-    if (!scan) return;
-    scan.face = face; scan.seg = seg; scan.phase = "center";
-    mode = "relief"; source = { pts: CANON, uv: null, photo: null }; setPaintEnabled(false); frameView();
-    $("stageTag").textContent = "Live";
-    loop();
+    try { scan.wake = await navigator.wakeLock?.request("screen"); } catch {}
+    if (kind === "body") {
+      g1.textContent = "Loading body tracking…"; g2.textContent = "First time only, about 15 MB";
+      scan.pose = await bodyTracker();
+      if (!scan) return;
+      scan.phase = "frame"; scan.Hcm = bodyHeight();
+      $("stageTag").textContent = "Live";
+      bodyLoop();
+    } else {
+      g1.textContent = "Loading face tracking…"; g2.textContent = "First time only, about 13 MB";
+      const [face, seg] = await Promise.all([videoFace(), segmenter()]);
+      if (!scan) return;
+      scan.face = face; scan.seg = seg; scan.phase = "center";
+      mode = "relief"; source = { pts: CANON, uv: null, photo: null }; setPaintEnabled(false); frameView();
+      $("stageTag").textContent = "Live";
+      loop();
+    }
   } catch (e) {
     console.error(e);
     const denied = e && (e.name === "NotAllowedError" || e.name === "SecurityError");
@@ -773,17 +817,22 @@ async function startScan() {
 function stopScan() {
   if (!scan) return;
   scan.stream?.getTracks().forEach((t) => t.stop());
+  scan.wake?.release?.().catch(() => {});
+  if (scan.voice && "speechSynthesis" in window) speechSynthesis.cancel();
   video.srcObject = null;
   scan = null;
-  $("stage").classList.remove("scanning"); $("cam").hidden = true;
+  $("stage").classList.remove("scanning", "body"); $("cam").hidden = true;
   $("startControls").hidden = false; $("scanControls").hidden = true;
   controls.autoRotate = $("spin").checked;
   resize();
 }
 
+const nextFrame = (fn) => (video.requestVideoFrameCallback ? video.requestVideoFrameCallback(fn) : requestAnimationFrame(fn));
+
+/* ---------- head scan loop ---------- */
 function loop() {
-  if (!scan) return;
-  const next = () => (video.requestVideoFrameCallback ? video.requestVideoFrameCallback(loop) : requestAnimationFrame(loop));
+  if (!scan || scan.kind !== "head") return;
+  const next = () => nextFrame(loop);
   if (video.readyState < 2) { next(); return; }
   const W = video.videoWidth, H = video.videoHeight;
   if (overlay.width !== W) { overlay.width = W; overlay.height = H; }
@@ -818,12 +867,11 @@ function loop() {
       scan.phase = "turn";
     }
   } else if (scan.phase === "turn") {
-    const sp = poseOf(P);
     // a new view is worth keeping when the camera has moved ~7° from every view so far
-    const novel = scan.frames.every((f) => f.cam.dot(sp.cam) < Math.cos(7 * Math.PI / 180));
-    if (sp.turn > 0.38) scan.segs[segOf(sp.angle)] = true;
-    if (sp.nx > 0.7) scan.left = true;
-    if (sp.nx < -0.7) scan.right = true;
+    const novel = scan.frames.every((f) => f.cam.dot(pose.cam) < Math.cos(7 * Math.PI / 180));
+    if (pose.turn > 0.38) scan.segs[segOf(pose.angle)] = true;
+    if (pose.nx > 0.7) scan.left = true;
+    if (pose.nx < -0.7) scan.right = true;
     if (novel && scan.frames.length < 60) capture(P, W, H, ts);
     const done = scan.segs.filter(Boolean).length;
     $("finishBtn").disabled = scan.frames.length < 4;
@@ -833,7 +881,7 @@ function loop() {
     else { finishScan(); return; }
     if (scan.dirty && ts - scan.lastBuild > 350) {
       scan.dirty = false; scan.lastBuild = ts;
-      if (extractHead()) rebuildHead(false);
+      if (extractScan(scan.grid, scan.frames.length, 0.12, 9)) rebuildScan(false);
     }
   }
   next();
@@ -850,10 +898,8 @@ function capture(P, W, H, ts) {
   if (!mask) return;
   const sx = mw / W, sy = mh / H, Pm = [P[0]*sx, P[1]*sx, P[2]*sx, P[3]*sx, P[4]*sy, P[5]*sy, P[6]*sy, P[7]*sy];
   carve(scan.grid, mask, mw, mh, Pm);
-  const cw = 320, ch = Math.round(H * cw / W), k = cw / W;
-  colorCanvas.width = cw; colorCanvas.height = ch;
-  cctx.drawImage(video, 0, 0, cw, ch);
-  scan.frames.push({ cam: poseOf(P).cam, Pc: P.map((v) => v * k), rgba: cctx.getImageData(0, 0, cw, ch).data, w: cw, h: ch });
+  const c = grabColor(W, H);
+  scan.frames.push({ cam: poseOf(P).cam, Pc: P.map((v) => v * c.k), rgba: c.rgba, w: c.w, h: c.h });
   scan.dirty = true;
 }
 
@@ -884,42 +930,261 @@ function drawGuide(px, pose, W, H) {
   }
 }
 
+/* ---------- live body scan ---------- */
+// You turn on the spot in front of a propped-up phone. Your shoulder and hip line gives the
+// turn angle; each new 5° of turn carves your outline into a body-sized voxel grid (cm).
+let poseP = null;
+const bodyTracker = () => (poseP ||= (async () => {
+  const { PoseLandmarker } = await vision();
+  const opts = (delegate) => ({
+    baseOptions: { modelAssetPath: new URL("pose_landmarker_lite.task", base).href, delegate },
+    runningMode: "VIDEO", numPoses: 1, outputSegmentationMasks: true,
+  });
+  try { return await PoseLandmarker.createFromOptions(fileset, opts("GPU")); } catch (e) { console.warn("GPU body tracking unavailable", e); }
+  return PoseLandmarker.createFromOptions(fileset, opts("CPU"));
+})().catch((e) => { poseP = null; throw e; }));
+
+function bodyHeight() {
+  const v = +$("bodyHeight").value;
+  return v >= 100 && v <= 230 ? v : 170;
+}
+
+let lastSpoken = { text: "", t: 0 };
+function speak(text, force = false) {
+  if (!scan?.voice || !("speechSynthesis" in window)) return;
+  const now = performance.now();
+  if (!force && (text === lastSpoken.text ? now - lastSpoken.t < 8000 : now - lastSpoken.t < 2200)) return;
+  speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(text); u.rate = 1.03;
+  speechSynthesis.speak(u);
+  lastSpoken = { text, t: now };
+}
+function guide(line1, line2 = "", voice = line1, force = false) {
+  g1.textContent = line1; g2.textContent = line2;
+  if (voice) speak(voice, force);
+}
+
+function bodyGrid(Hcm) {
+  const h = Math.max(0.9, (Hcm + 13) / 170);
+  const G = { h, x0: -70, y0: -3, z0: -45, nx: Math.ceil(140 / h), ny: Math.ceil((Hcm + 16) / h), nz: Math.ceil(90 / h) };
+  const NV = G.nx * G.ny * G.nz, prior = new Uint8Array(NV).fill(1);
+  // an empty shell around the grid so the surface always closes
+  for (let k = 0; k < G.nz; k++) for (let j = 0; j < G.ny; j++) for (let i = 0; i < G.nx; i++) {
+    if (i === 0 || j === 0 || k === 0 || i === G.nx - 1 || j === G.ny - 1 || k === G.nz - 1) prior[(k * G.ny + j) * G.nx + i] = 0;
+  }
+  return { G, prior, outs: new Uint8Array(NV) };
+}
+
+// Body turn from 3D landmarks: 0 when facing the camera. Uses the shoulder and hip lines.
+function bodyYaw(w) {
+  const dx = (w[11].x - w[12].x) + (w[23].x - w[24].x);
+  const dz = (w[11].z - w[12].z) + (w[23].z - w[24].z); // MediaPipe z grows away from the camera
+  return Math.atan2(dz, dx);
+}
+const wrapPi = (a) => Math.atan2(Math.sin(a), Math.cos(a));
+
+function halfMask(m) {
+  const f = m.getAsFloat32Array(), W = m.width, w = W >> 1, h = m.height >> 1, out = new Uint8Array(w * h);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) out[y * w + x] = f[(y * 2) * W + x * 2] > 0.5 ? 1 : 0;
+  return { data: out, w, h };
+}
+function maskBox(mk) {
+  let top = Infinity, bottom = -1;
+  for (let y = 0; y < mk.h; y++) {
+    let n = 0; for (let x = 0; x < mk.w; x++) n += mk.data[y * mk.w + x];
+    if (n > 2) { if (y < top) top = y; bottom = y; }
+  }
+  return { top, bottom };
+}
+// Silhouette overlap with the first view, lined up on the hips: peaks when you face the front again.
+function overlap(a, ua, b, ub) {
+  const dx = Math.round(ub - ua);
+  let inter = 0, uni = 0;
+  for (let y = 0; y < a.h; y++) for (let x = 0; x < a.w; x++) {
+    const xb = x + dx, va = a.data[y * a.w + x], vb = xb >= 0 && xb < b.w ? b.data[y * b.w + xb] : 0;
+    inter += va & vb; uni += va | vb;
+  }
+  return uni ? inter / uni : 0;
+}
+
+// Camera for one view: body cm (X right, Y up from the floor, Z toward the camera at 0°) to mask pixels.
+function bodyCamera(fr, theta) {
+  const c = Math.cos(theta), s = Math.sin(theta), k = fr.mask.w / fr.W;
+  return [fr.s * c * k, 0, fr.s * s * k, fr.u0 * k, 0, -fr.s * k, 0, fr.vfloor * k];
+}
+
+function bodyLoop() {
+  if (!scan || scan.kind !== "body") return;
+  const next = () => nextFrame(bodyLoop);
+  if (video.readyState < 2) { next(); return; }
+  const W = video.videoWidth, H = video.videoHeight, ts = performance.now();
+  if (overlay.width !== W) { overlay.width = W; overlay.height = H; }
+  let L = null, Wl = null, mk = null;
+  const wantMask = scan.phase === "pose" || scan.phase === "turn";
+  try {
+    scan.pose.detectForVideo(video, ts, (res) => {
+      L = res.landmarks?.[0] || null; Wl = res.worldLandmarks?.[0] || null;
+      if (L && wantMask && res.segmentationMasks?.[0]) mk = halfMask(res.segmentationMasks[0]);
+    });
+  } catch (e) { console.warn(e); }
+  octx.clearRect(0, 0, W, H);
+  if (!L || !Wl) {
+    if (scan.phase !== "turn") guide("Step into view", "Prop the phone up and stand 2 to 3 metres away", "Step into view, about two to three metres from the phone");
+    else guide("Keep turning slowly", "I lost you for a moment");
+    next(); return;
+  }
+  drawBody(L, W, H);
+  const vis = (i) => (L[i].visibility ?? 1) > 0.5;
+  const hipU = (L[23].x + L[24].x) / 2 * W;
+  const ankleV = (L[27].y + L[28].y) / 2 * H, shoulderV = (L[11].y + L[12].y) / 2 * H;
+
+  if (scan.phase === "frame" || scan.phase === "pose") {
+    const feet = vis(27) && vis(28) && L[27].y < 0.97 && L[28].y < 0.97;
+    const head = vis(0) && L[0].y > 0.06;
+    const span = (L[27].y + L[28].y) / 2 - L[0].y;
+    if (!feet || !head) { scan.phase = "frame"; scan.stable = 0; guide("Step back until your whole body fits", "Head and feet must both be in the picture", "Step back until your head and feet are both in view"); next(); return; }
+    if (span < 0.45) { scan.phase = "frame"; scan.stable = 0; guide("Come a little closer", "Fill more of the picture", "Come a little closer"); next(); return; }
+    if (hipU < W * 0.25 || hipU > W * 0.75) { scan.phase = "frame"; scan.stable = 0; guide("Move to the middle of the picture", "", "Move to the middle"); next(); return; }
+    scan.phase = "pose";
+    const facing = Math.abs(wrapPi(2 * bodyYaw(Wl))) / 2 < 0.35;
+    const sw = Math.abs(L[11].x - L[12].x);
+    const armsOut = Math.abs(L[15].x - L[23].x) > sw * 0.35 && Math.abs(L[16].x - L[24].x) > sw * 0.35;
+    if (!facing) { scan.stable = 0; guide("Face the phone", "", "Face the phone"); next(); return; }
+    if (!armsOut) { scan.stable = 0; guide("Hold your arms a little away from your body", "Like an A shape", "Hold your arms a little away from your body, like an A"); next(); return; }
+    if (!scan.stable) { scan.stable = ts; guide("Hold still…", "3", "Great. Hold still. 3, 2, 1", true); }
+    else g2.textContent = String(Math.max(1, 3 - Math.floor((ts - scan.stable) / 1000)));
+    if (ts - scan.stable > 3000 && mk) {
+      // calibrate: your height in pixels sets the scale, your feet set the floor
+      const box = maskBox(mk), k = W / mk.w;
+      const s = (box.bottom - box.top) * k / scan.Hcm;
+      scan.cal = { s, vfloor: box.bottom * k, ankleV, shoulderV };
+      scan.psi0 = scan.psiPrev = 2 * bodyYaw(Wl); scan.psiU = scan.psi0;
+      scan.yaw = 0; scan.dir = 0; scan.prog = 0; scan.nextCap = 0; scan.hist = [];
+      scan.grid = bodyGrid(scan.Hcm); scan.best = { iou: 0, prog: 0 };
+      mode = "body"; frameView(); $("depth").disabled = true;
+      $("stageTag").textContent = "Building your body";
+      scan.phase = "turn";
+      guide("Now turn slowly to your left", "Keep your arms still", "Now turn slowly to your left, all the way round. Keep your arms still.", true);
+    }
+    next(); return;
+  }
+
+  // phase: turn
+  const psi = 2 * bodyYaw(Wl);
+  scan.psiU += wrapPi(psi - scan.psiPrev); scan.psiPrev = psi;
+  const yawNow = (scan.psiU - scan.psi0) / 2;
+  scan.yaw += 0.4 * (yawNow - scan.yaw);
+  if (!scan.dir && Math.abs(scan.yaw) > 0.2) scan.dir = Math.sign(scan.yaw);
+  const prog = (scan.dir || 1) * scan.yaw * 180 / Math.PI;
+  scan.prog = Math.max(scan.prog, prog);
+  // keep the scale and floor locked to you even if you drift a little
+  const s = scan.cal.s * (ankleV - shoulderV) / (scan.cal.ankleV - scan.cal.shoulderV);
+  const vfloor = ankleV + (scan.cal.vfloor - scan.cal.ankleV) * s / scan.cal.s;
+  if (mk && prog >= scan.nextCap && scan.frames.length < 90) {
+    const c = grabColor(W, H);
+    const fr = { theta: scan.yaw, prog, s, vfloor, u0: hipU, W, H, mask: mk, color: c };
+    scan.frames.push(fr);
+    carve(scan.grid, mk.data, mk.w, mk.h, bodyCamera(fr, fr.theta));
+    scan.nextCap = prog + 5; scan.dirty = true;
+  }
+  // loop closure: the outline matches the first view again when you're back at the front
+  if (mk && prog > 300 && scan.frames.length) {
+    const iou = overlap(scan.frames[0].mask, scan.frames[0].u0 * mk.w / W, mk, hipU * mk.w / W);
+    if (iou > scan.best.iou) scan.best = { iou, prog };
+  }
+  scan.hist.push([ts, prog]); while (scan.hist.length && ts - scan.hist[0][0] > 1000) scan.hist.shift();
+  const speed = prog - scan.hist[0][1];
+  $("finishBtn").disabled = scan.frames.length < 8;
+  const pct = Math.max(0, Math.min(100, Math.round(prog / 3.6)));
+  if (speed > 50) guide("Slow down a little", `${pct}% round`, "Slow down a little");
+  else if (prog < 15) guide("Turn slowly to your left", "Keep your arms still", null);
+  else if (prog < 175 && prog > 85 && !scan.said90) { scan.said90 = true; guide("Keep going", `${pct}% round`, "Quarter of the way. Keep going.", true); }
+  else if (prog >= 175 && !scan.said180) { scan.said180 = true; guide("Halfway", `${pct}% round`, "Halfway. Keep going.", true); }
+  else if (prog >= 265 && !scan.said270) { scan.said270 = true; guide("Almost there", `${pct}% round`, "Almost there.", true); }
+  else g2.textContent = `${pct}% round`;
+  drawTurnRing(prog, W, H);
+  if ((scan.best.iou > 0 && prog > scan.best.prog + 30) || prog > 430) { finishBodyScan(); return; }
+  if (scan.dirty && ts - scan.lastBuild > 1500) {
+    scan.dirty = false; scan.lastBuild = ts;
+    if (extractScan(scan.grid, scan.frames.length, 0.08, scan.Hcm - 12)) rebuildScan(false);
+  }
+  next();
+}
+
+const BONES = [[11,12],[11,13],[13,15],[12,14],[14,16],[11,23],[12,24],[23,24],[23,25],[25,27],[24,26],[26,28]];
+function drawBody(L, W, H) {
+  octx.lineCap = "round"; octx.lineWidth = Math.max(3, W / 200); octx.strokeStyle = "rgba(255,255,255,.7)";
+  for (const [a, b] of BONES) { octx.beginPath(); octx.moveTo(L[a].x * W, L[a].y * H); octx.lineTo(L[b].x * W, L[b].y * H); octx.stroke(); }
+}
+function drawTurnRing(prog, W, H) {
+  const r = Math.min(W, H) * 0.09, cx = W - r * 1.6, cy = r * 1.6, lw = r * 0.28;
+  octx.lineWidth = lw;
+  octx.beginPath(); octx.arc(cx, cy, r, 0, 2 * Math.PI); octx.strokeStyle = "rgba(255,255,255,.3)"; octx.stroke();
+  octx.beginPath(); octx.arc(cx, cy, r, -Math.PI / 2, -Math.PI / 2 + Math.max(0, Math.min(1, prog / 360)) * 2 * Math.PI);
+  octx.strokeStyle = "#4fe0a0"; octx.stroke();
+}
+
+function finishBodyScan() {
+  if (!scan || !scan.grid || scan.frames.length < 8) { say("Turn a bit further before finishing.", true); return; }
+  // stretch the measured turn so the loop closes exactly at 360°, then carve again with the corrected angles
+  const closed = scan.best.iou > 0.5 && scan.best.prog > 300;
+  const k = closed ? 360 / scan.best.prog : 1;
+  const frames = scan.frames.filter((f) => !closed || f.prog < scan.best.prog - 2);
+  const grid = bodyGrid(scan.Hcm);
+  for (const f of frames) { f.theta *= k; carve(grid, f.mask.data, f.mask.w, f.mask.h, bodyCamera(f, f.theta)); }
+  const Hcm = scan.Hcm;
+  speak("Done. Here you are.", true);
+  stopScan();
+  mode = "body";
+  if (!extractScan(grid, frames.length, 0.08, Hcm - 12)) { say("The scan didn't come together. Try again in brighter light with a plain background.", true); return; }
+  scanRaw.frames = frames.map((f) => {
+    const P = bodyCamera(f, f.theta), kk = f.color.w / f.mask.w;
+    return { cam: new THREE.Vector3(-Math.sin(f.theta), 0, Math.cos(f.theta)), Pc: P.map((v) => v * kk), rgba: f.color.rgba, w: f.color.w, h: f.color.h };
+  });
+  rebuildScan(true); frameView(); setPaintEnabled(true); setFinish(finish === "clay" ? "paint" : finish);
+  $("stageTag").textContent = "Your figure";
+  $("pTitle").textContent = "Figure Study, " + new Date().getFullYear();
+  say(closed ? "" : "Tip: turn a full circle back to the front for the most accurate shape.");
+}
+
 function finishScan() {
-  if (!scan || !scan.grid) return;
-  if (!extractHead()) { say("The scan didn't come together. Try again in brighter light with a plain background.", true); stopScan(); return; }
-  headRaw.frames = scan.frames;
-  const n = scan.frames.length;
+  if (!scan) return;
+  if (scan.kind === "body") { finishBodyScan(); return; }
+  if (!scan.grid) return;
+  if (!extractScan(scan.grid, scan.frames.length, 0.12, 9)) { say("The scan didn't come together. Try again in brighter light with a plain background.", true); stopScan(); return; }
+  scanRaw.frames = scan.frames;
   stopScan();
   mode = "head";
-  rebuildHead(true); frameView(); setPaintEnabled(true); setFinish(finish === "clay" ? "paint" : finish);
+  rebuildScan(true); frameView(); setPaintEnabled(true); setFinish(finish === "clay" ? "paint" : finish);
   $("stageTag").textContent = "Your head";
   $("pTitle").textContent = "Head Study, " + new Date().getFullYear();
-  $("pMesh").textContent = `${n} views · ${lastMesh.tris.length.toLocaleString()} faces`;
   say("");
 }
 
-$("scanBtn").addEventListener("click", startScan);
+$("scanBtn").addEventListener("click", () => startScan("head"));
+$("bodyBtn").addEventListener("click", () => startScan("body"));
 $("finishBtn").addEventListener("click", finishScan);
 $("cancelBtn").addEventListener("click", () => {
-  const wasHead = scan?.phase === "turn";
   stopScan();
-  if (wasHead || mode === "head") { mode = "relief"; headRaw = null; }
+  mode = "relief"; scanRaw = null;
   source = { pts: CANON, uv: null, photo: null };
   $("depth").disabled = false; setPaintEnabled(false);
   rebuildRelief(); frameView(); setFinish(finish);
   $("stageTag").textContent = "Sample · neutral face";
   $("pTitle").textContent = "Study of a Face";
 });
+try { const h = localStorage.getItem("bodyHeight"); if (h) $("bodyHeight").value = h; } catch {}
+$("bodyHeight").addEventListener("change", (e) => { try { localStorage.setItem("bodyHeight", e.target.value); } catch {} });
 
 /* ---------- downloads ---------- */
-function stlBytes() {
+function stlBytes(mmPerCm) {
   const { pos, tris } = lastMesh;
   const buf = new ArrayBuffer(84 + tris.length * 50), dv = new DataView(buf);
   const head = "Selfie Sculptor, units mm";
   for (let i = 0; i < head.length; i++) dv.setUint8(i, head.charCodeAt(i));
   dv.setUint32(80, tris.length, true);
   let o = 84;
-  const P = (i) => pos[i].map((v) => v * 10);
+  const P = (i) => pos[i].map((v) => v * mmPerCm);
   for (const [a, b, c] of tris) {
     const A = P(a), B = P(b), C = P(c);
     const u = [B[0]-A[0], B[1]-A[1], B[2]-A[2]], v = [C[0]-A[0], C[1]-A[1], C[2]-A[2]];
@@ -937,7 +1202,10 @@ function save(filename, blob) {
   setTimeout(() => URL.revokeObjectURL(a.href), 4000);
 }
 $("dlPng").addEventListener("click", () => { renderer.render(scene, camera); canvas.toBlob((b) => b && save("selfie-sculpt.png", b), "image/png"); });
-$("dlStl").addEventListener("click", () => save(mode === "head" ? "head-sculpt.stl" : "selfie-relief.stl", new Blob([stlBytes()], { type: "model/stl" })));
+$("dlStl").addEventListener("click", () => {
+  const [name, mm] = { head: ["head-sculpt.stl", 10], body: ["body-figure-1to10.stl", 1], relief: ["selfie-relief.stl", 10] }[mode];
+  save(name, new Blob([stlBytes(mm)], { type: "model/stl" }));
+});
 
 
 </script>
