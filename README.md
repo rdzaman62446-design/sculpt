@@ -6,7 +6,7 @@ Scan your head, or your whole body clothes and all, with your phone's front came
 
 ## Live head scan
 
-1. Tap **Scan my head (live)** and allow the camera.
+1. Tap **Scan my head** and allow the camera.
 2. **Look straight at the camera** and hold still. Until then the sculpture mirrors your face in real time.
 3. **Slowly roll your head in a circle** until the ring around your face is full, then **turn all the way left and right**. The bust builds up on screen as you go.
 4. It finishes on its own, or tap **Finish sculpt** whenever you like (after 4 views).
